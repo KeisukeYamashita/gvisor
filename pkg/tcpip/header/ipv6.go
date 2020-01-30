@@ -17,6 +17,7 @@ package header
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -441,5 +442,48 @@ func ScopeForIPv6Address(addr tcpip.Address) (IPv6AddressScope, *tcpip.Error) {
 
 	default:
 		return GlobalScope, nil
+	}
+}
+
+// InitialTempIID generates the initial temporary IID history value to generate
+// temporary SLAAC addresses with.
+func InitialTempIID(seed []byte, nicID tcpip.NICID) []byte {
+	h := sha256.New()
+	// h.Write never returns an error.
+	h.Write(seed)
+	var nicIDBuf [4]byte
+	binary.BigEndian.PutUint32(nicIDBuf[:], uint32(nicID))
+	h.Write(nicIDBuf[:])
+
+	var sumBuf [sha256.Size]byte
+	sum := h.Sum(sumBuf[:0])
+
+	return sum[sha256.Size-IIDSize:]
+}
+
+// GenerateTempIPv6SLAACAddr generates an temporary SLAAC IPv6 address for an
+// associated stable/permanent SLAAC address.
+//
+// GenerateTempIPv6SLAACAddr will update the temporary IID history value to be
+// used when generating a new temporary IID.
+func GenerateTempIPv6SLAACAddr(tempIIDHistory *[]byte, stableAddr tcpip.Address) tcpip.AddressWithPrefix {
+	addrBytes := []byte(stableAddr)
+	h := sha256.New()
+	h.Write(*tempIIDHistory)
+	h.Write(addrBytes[IIDOffsetInIPv6Address:])
+	var sumBuf [sha256.Size]byte
+	sum := h.Sum(sumBuf[:0])
+
+	// The rightmost 64 bits of sum are saved for the next iteration.
+	*tempIIDHistory = sum[sha256.Size-IIDSize:]
+
+	// The leftmost 64 bits of sum is used as the IID.
+	if n := copy(addrBytes[IIDOffsetInIPv6Address:], sum); n != IIDSize {
+		panic(fmt.Sprintf("copied %d IID bytes, expected %d bytes", n, IIDSize))
+	}
+
+	return tcpip.AddressWithPrefix{
+		Address:   tcpip.Address(addrBytes),
+		PrefixLen: IIDOffsetInIPv6Address * 8,
 	}
 }
