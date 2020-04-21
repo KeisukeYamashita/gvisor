@@ -22,19 +22,11 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
-const (
-	// EFD_SEMAPHORE is a flag used in syscall eventfd(2) and eventfd2(2). Please
-	// see its man page for more information.
-	EFD_SEMAPHORE = 1
-	EFD_NONBLOCK  = 0x800
-	EFD_CLOEXEC   = 0x80000
-)
-
 // Eventfd2 implements linux syscall eventfd2(2).
 func Eventfd2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	initVal := args[0].Int()
 	flags := uint(args[1].Uint())
-	allOps := uint(EFD_SEMAPHORE | EFD_NONBLOCK | EFD_CLOEXEC)
+	allOps := uint(linux.EFD_SEMAPHORE | linux.EFD_NONBLOCK | linux.EFD_CLOEXEC)
 
 	if flags & ^allOps != 0 {
 		return 0, nil, syserror.EINVAL
